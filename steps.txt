@@ -1,0 +1,92 @@
+For identifying mapping conflicts I am following below investigation procedure, if this technique looks ok we can follow this, but I think we don't need this as a separate exercise for each app since the data streams/index templates are common. That is what I guess we need to identify. But for all fields I am not able to identify a component template.
+ 
+Data View - metrics*
+Conflicts - 19
+Sample conflict field investigation path
+Field Name :ci.ingested_at
+Query#1 
+ 
+GET metrics*/_field_caps?fields=ci.ingested_at
+With this query indentified the indexes with conflicting data.
+.ds-metrics-apm.app.* - Uses data type = keyword and .ds-metricbeat-* uses data type date
+
+Query#2
+Fetches the datastream for potential index with wrong data type
+GET _resolve/index/.ds-metrics-apm.app.abp_batch-default-2026.09.23-000413
+ 
+Query#3
+Fetches all the index templates where can find and match the data stream retrieved in Query#2
+GET _index_template
+ 
+Once matched get the list of component template names like for this case : "metrics-apm.app@template",
+"composed_of": [
+          "metrics@mappings",
+          "apm@mappings",
+          "apm@settings",
+          "apm-90d@lifecycle",
+          "metrics-apm@mappings",
+          "metrics-apm@settings",
+          "metrics-apm.app-fallback@ilm",
+          "metrics@custom",
+          "metrics-apm.app@custom",
+          "ecs@mappings"
+        ]
+ 
+Query#4
+Query all component templates together :
+GET _component_template/metrics@mappings
+GET _component_template/apm@mappings
+GET _component_template/apm@settings
+GET _component_template/apm-90d@lifecycle
+GET _component_template/metrics-apm@mappings
+GET _component_template/metrics-apm@settings
+GET _component_template/metrics-apm.app-fallback@ilm
+GET _component_template/metrics@custom
+GET _component_template/metrics-apm.app@custom
+GET _component_template/ecs@mappings
+ 
+Search for pattern rules
+For this field found 2 rules :
+ 
+Found this pattern =>ecs@mappings
+{
+                "ecs_date": {
+                  "path_match": [
+                    "*.timestamp",
+                    "*_timestamp",
+                    "*.not_after",
+                    "*.not_before",
+                    "*.accessed",
+                    "created",
+                    "*.created",
+                    "*.installed",
+                    "*.creation_date",
+                    "*.ctime",
+                    "*.mtime",
+"ingested",
+                    "*.ingested",
+                    "*.start",
+                    "*.end",
+                    "*.indicator.first_seen",
+                    "*.indicator.last_seen",
+                    "*.indicator.modified_at",
+                    "*threat.enrichments.matched.occurred",
+                    "*.lifecycle.last_activity"
+                  ],
+                  "mapping": {
+                    "type": "date"
+                  },
+                  "unmatch_mapping_type": "object"
+                }
+And any string default data type pattern (fallback)
+{
+                "all_strings_to_keywords": {
+                  "mapping": {
+                    "ignore_above": 1024,
+                    "type": "keyword"
+                  },
+                  "match_mapping_type": "string"
+                }
+              }
+ 
+Since field name is ci.ingested_at which is not matching with ecs_date regex pattern hence possibly all-strings_to_keyword is getting applied.
